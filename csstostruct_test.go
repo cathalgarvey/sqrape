@@ -56,8 +56,8 @@ var (
   <h1>Blogroll!</h1>
   <div class="peeps">
   <ul>
-  <li class="name"><a href="http://john.doe">John Doe</a></li>
-  <li class="name"><a href="http://jane.doe">Jane Doe</a></li>
+  <li class="name" data-favourite-colour="blue"><a href="http://john.doe">John Doe</a></li>
+  <li class="name" data-age="50"><a href="http://jane.doe">Jane Doe</a></li>
   </ul>
   </div>
   </body>
@@ -144,6 +144,12 @@ func TestMoreComplexExtraction(t *testing.T) {
 		Peep{"John Doe", "http://john.doe"},
 		Peep{"Jane Doe", "http://jane.doe"},
 	}, mc.Entries)
+	colour := new(struct {
+		Favourite []string `csss:"li[data-favourite-colour];attr=data-favourite-colour"`
+	})
+	err = extractByTags(moreComplexResp.Selection, colour)
+	assert.Nil(t, err)
+	assert.Equal(t, []string{"blue"}, colour.Favourite)
 }
 
 func TestParseTag(t *testing.T) {
