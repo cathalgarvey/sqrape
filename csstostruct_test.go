@@ -1,6 +1,7 @@
 package sqrape
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -18,10 +19,41 @@ type Simple struct {
 type Complex struct {
 	Heading    string   `csss:"h1;text"`
 	Paragraphs []string `csss:"p;text"`
+	ParaHTML   []string `csss:"p;html"` // Will not be filled.
+	Paracount  int
 	Image      struct {
 		Src    string `csss:"img;attr=src"`
 		Number int    `csss:"img;attr=data-some-number"`
 	} `csss:"div;obj"`
+}
+
+// SqrapePostFlight fulfils the PostFlighter interface.
+// It counts the number of scraped paragraphs.
+func (cm *Complex) SqrapePostFlight(context ...interface{}) error {
+	if len(context) == 0 {
+		return fmt.Errorf("No context args passed to Complex testcase.")
+	}
+	if context[0].(string) != "foo" || context[1].(int) != 2 {
+		return fmt.Errorf("Context args incorrect: %+v", context)
+	}
+	cm.Paracount = len(cm.Paragraphs)
+	return nil
+}
+
+// SqrapeFieldSelect fulfiles the FieldSelecter interface.
+// It makes the testcase skip ParaHTML for whatever reason.
+// It errors if it doesn't receive the expected context.
+func (cm *Complex) SqrapeFieldSelect(fieldName string, context ...interface{}) (bool, error) {
+	if len(context) == 0 {
+		return false, fmt.Errorf("No context args passed to Complex testcase.")
+	}
+	if context[0].(string) != "foo" || context[1].(int) != 2 {
+		return false, fmt.Errorf("Context args incorrect: %+v", context)
+	}
+	if fieldName == "ParaHTML" {
+		return false, nil
+	}
+	return true, nil
 }
 
 type Peep struct {
@@ -122,7 +154,7 @@ func TestComplexExtraction(t *testing.T) {
 	c := new(Complex)
 	simpleResp, err := goquery.NewDocumentFromReader(strings.NewReader(simpleHTML))
 	assert.Nil(t, err)
-	err = extractByTags(simpleResp.Selection, c)
+	err = extractByTags(simpleResp.Selection, c, "foo", 2)
 	assert.Nil(t, err)
 	assert.Equal(t, "This is a title for my super simple blogpost", c.Heading)
 	assert.Equal(t, []string{

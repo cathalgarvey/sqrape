@@ -3,6 +3,7 @@ package sqrape
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"reflect"
 	"strings"
@@ -18,11 +19,46 @@ type cssStructer struct {
 	targetStruct interface{}
 	// Map struct field names to their intended values
 	collectedFieldValues map[string]interface{}
+	// Arbitrary value passed through to the postflight method.
+	// This is user-defined, if at all.
+	context []interface{}
+}
+
+// FieldSelecter is an optional method set; if defined, then
+// prior to collecting data for a field from the scraped content this
+// method will be called; it should return (true, nil) to fill that field,
+// (false, nil) to skip that field, and (_, error) to cancel scraping.
+// The context argument is completely user-defined, and is not Sqrape's
+// business. It is passed through from the variadic optional argument to
+// Sqrape's entry functions, and is exactly as passed to those functions.
+type FieldSelecter interface {
+	SqrapeFieldSelect(fieldName string, context ...interface{}) (bool, error)
+}
+
+// PostFlighter is an optional method for performing post-scrape
+// operations on a struct. For example, scraped data might pull a set of
+// data into one field, and a postflight operation might summarise those
+// data and set another field. A more specific example might be a scraper
+// that harvests view, favourite, and repost counts for social media posts, and
+// then post-flight summarises the three counts as "interactions".
+// The context arguments are exactly as passed to Sqrape's entry functions,
+// and are there for user-defined behaviours.
+// This method will only be called for finalised objects, so if some error
+// or behaviour cancels a scrape this method will not be called.
+type PostFlighter interface {
+	SqrapePostFlight(context ...interface{}) error
 }
 
 func (cs *cssStructer) GetValue() error {
 	//return mapstructure.Decode(cs.collectedFieldValues, cs.targetStruct) /*
-	return mapstructure.WeakDecode(cs.collectedFieldValues, cs.targetStruct) //*/
+	err := mapstructure.WeakDecode(cs.collectedFieldValues, cs.targetStruct) //*/
+	if err != nil {
+		return err
+	}
+	if postFlighter, ok := cs.targetStruct.(PostFlighter); ok {
+		return postFlighter.SqrapePostFlight(cs.context...)
+	}
+	return nil
 }
 
 func (cs *cssStructer) parseTargetFields(resp *goquery.Selection) error {
@@ -33,6 +69,18 @@ func (cs *cssStructer) parseTargetFields(resp *goquery.Selection) error {
 	}
 	//fmt.Printf("parseTargetFields: Iterating fieldName,fieldTag\n")
 	for fieldName, fieldTag := range structTags {
+		if fieldTag == "" {
+			continue
+		}
+		if fieldSelecter, ok := cs.targetStruct.(FieldSelecter); ok {
+			dofield, serr := fieldSelecter.SqrapeFieldSelect(fieldName, cs.context...)
+			if serr != nil {
+				return serr
+			}
+			if !dofield {
+				continue
+			}
+		}
 		//fmt.Printf("parseTargetFields: On fieldName='%s',fieldTag='%s'\n", fieldName, fieldTag)
 		err = cs.parseField(fieldName, fieldTag, resp)
 		if err != nil {
@@ -214,10 +262,11 @@ func parseTag(tag string) (selector, valueType, attrName string, err error) {
 	return selector, valueType, "", nil
 }
 
-func prepStructer(src *goquery.Selection, dest interface{}) (*cssStructer, error) {
+func prepStructer(src *goquery.Selection, dest interface{}, context ...interface{}) (*cssStructer, error) {
 	cs := &cssStructer{
 		targetStruct:         dest,
 		collectedFieldValues: make(map[string]interface{}),
+		context:              context,
 	}
 	//fmt.Printf("extractByTags: passing to parseTargetFields(), state= %+v\n", cs)
 	err := cs.parseTargetFields(src)
@@ -229,8 +278,8 @@ func prepStructer(src *goquery.Selection, dest interface{}) (*cssStructer, error
 
 // extractByTags tries to pull information from src according to css rules in
 // dest's struct field tags.
-func extractByTags(src *goquery.Selection, dest interface{}) error {
-	cs, err := prepStructer(src, dest)
+func extractByTags(src *goquery.Selection, dest interface{}, context ...interface{}) error {
+	cs, err := prepStructer(src, dest, context...)
 	if err != nil {
 		return err
 	}
@@ -240,8 +289,8 @@ func extractByTags(src *goquery.Selection, dest interface{}) error {
 
 // mapFromTags uses template's tags to find and pull data from src, and returns
 // a map of the resulting data.
-func mapFromTags(src *goquery.Selection, template interface{}) (map[string]interface{}, error) {
-	cs, err := prepStructer(src, template)
+func mapFromTags(src *goquery.Selection, template interface{}, context ...interface{}) (map[string]interface{}, error) {
+	cs, err := prepStructer(src, template, context...)
 	if err != nil {
 		return nil, err
 	}
@@ -250,15 +299,23 @@ func mapFromTags(src *goquery.Selection, template interface{}) (map[string]inter
 
 // ExtractHTMLReader provides an entry point for parsing a HTML document
 // in reader-form into a destination struct.
-func ExtractHTMLReader(reader io.Reader, dest interface{}) error {
-	doc, err := goquery.NewDocumentFromReader(reader)
+func ExtractHTMLReader(reader io.Reader, dest interface{}, context ...interface{}) (err error) {
+	var doc *goquery.Document
+	// Catch panics; reflect being a mire of panics, after all.
+	// Need to rewrite to try and preserve panic context, somehow?
+	defer func() {
+		pan := recover()
+		err = fmt.Errorf("Panic caught in ExtractHTMLReader: %+v", pan)
+	}()
+	doc, err = goquery.NewDocumentFromReader(reader)
 	if err != nil {
-		return err
+		return
 	}
-	return extractByTags(doc.Selection, dest)
+	err = extractByTags(doc.Selection, dest, context...)
+	return
 }
 
 // ExtractHTMLString provides an entry point for parsing a HTML document
-func ExtractHTMLString(document string, dest interface{}) error {
-	return ExtractHTMLReader(strings.NewReader(document), dest)
+func ExtractHTMLString(document string, dest interface{}, context ...interface{}) error {
+	return ExtractHTMLReader(strings.NewReader(document), dest, context...)
 }

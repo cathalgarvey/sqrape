@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/alecthomas/kingpin"
@@ -28,12 +29,12 @@ func main() {
 	kingpin.Parse()
 	resp, err := http.Get("https://twitter.com/" + *profile)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 	tp := new(TwitterProfile)
 	err = sqrape.ExtractHTMLReader(resp.Body, tp)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 	for _, tweet := range tp.Tweets {
 		fmt.Printf("@%s: %s\n", tweet.Author, tweet.Content)
