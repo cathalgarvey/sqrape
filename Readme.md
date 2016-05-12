@@ -42,6 +42,7 @@ Note; that struct tag is `csss`, not `css`. It's "css selector", because I
 didn't want to clobber any preexisting `css` struct tag libs that may exist.
 
 ### How?
+#### Basics
 Sqrape uses struct tags to figure out how to access and extract data. These
 tags consist of two portions; a CSS selector, and a data extractor, separated
 by a semicolon.. The former are an exercise for the reader and are well
@@ -77,6 +78,30 @@ goquery selection.
 If your field is a struct or slice of structs, then the extractor portion of
 the tag should be `obj`, to indicate that parsing data from extracted structs
 should be deferred to the embedded struct fields. See the Twitter example, above.
+
+#### More Advanced: Optional Methods
+Sometimes a datatype needs to be filled from multiple sources, or has fields
+that should only be filled under certain other conditions, or should have
+conditional or context-aware behaviour... for this, you can define optional
+methods that alter Sqrape's behaviour and allow you to selectively fill fields,
+or to perform post-processing or post-scrape data validation on your struct.
+
+The methods supported so far include:
+
+* `SqrapeFieldSelect(fieldName string, context...interface{}) (doField bool, cancelScrape error)`
+* `SqrapePostFlight(context... interface{}) error`
+
+The `context` argument in either case is a variadic list of arbitrary datatypes
+which are passed by you to the entrypoint functions when operating a scrape.
+
+So, for example, you could implement multi-page scraping by passing the current
+URL to your scrape and defining a `SqrapeFieldSelect` method that fills fields
+only for relevant URLs.
+
+Or, you could perform data validation on your expected output
+with a `SqrapePostFlight` method, either with hardcoded regex/validation or
+by passing per-job regex or callbacks. Any error you raise in PostFlight will
+be returned from the job to you.
 
 ### What's Supported?
 Nested structs and array fields containing either basic values or struct values.
