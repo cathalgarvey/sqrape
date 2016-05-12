@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
-	"github.com/fatih/structs"
 	"github.com/mitchellh/mapstructure"
 	"github.com/oleiade/reflections"
 )
@@ -128,7 +127,12 @@ func (cs *cssStructer) setFieldValueByType(fieldValue, fieldName, attrName strin
 			}
 			// Convert the struct to a map again, for Mapstructure.
 			//fmt.Printf("setFieldValueByType: fieldName='%s', got struct field Value: %+v\n", fieldName, targetFieldDirect)
-			cs.collectedFieldValues[fieldName] = structs.Map(targetFieldDirect)
+			//cs.collectedFieldValues[fieldName] = structs.Map(targetFieldDirect)
+			stmap, err := reflections.Items(targetFieldDirect)
+			if err != nil {
+				return err
+			}
+			cs.collectedFieldValues[fieldName] = stmap
 		}
 	case reflect.Array, reflect.Slice:
 		// Now also need to handle this for slices of structs.
