@@ -2,13 +2,15 @@
 package sqrape
 
 import (
-	"errors"
+	//	"errors"
+
 	"fmt"
 	"io"
 	"reflect"
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/go-errors/errors"
 	"github.com/mitchellh/mapstructure"
 	"github.com/oleiade/reflections"
 )
@@ -21,6 +23,12 @@ type cssStructer struct {
 	// Arbitrary value passed through to the postflight method.
 	// This is user-defined, if at all.
 	context []interface{}
+}
+
+// Used in goquery.Selection.Each to collect and report errors.
+type eachError struct {
+	idx int
+	err error
 }
 
 // FieldSelecter is an optional method set; if defined, then
@@ -60,7 +68,7 @@ func (cs *cssStructer) GetValue() error {
 	return nil
 }
 
-func (cs *cssStructer) parseTargetFields(resp *goquery.Selection) error {
+func (cs *cssStructer) processTargetFields(resp *goquery.Selection) error {
 	//fmt.Printf("parseTargetFields: Getting csss tags.\n")
 	structTags, err := reflections.Tags(cs.targetStruct, "csss")
 	if err != nil {
@@ -71,6 +79,8 @@ func (cs *cssStructer) parseTargetFields(resp *goquery.Selection) error {
 		if fieldTag == "" {
 			continue
 		}
+		// For FieldSelecters, let them choose whether to skip a field based
+		// on the context.
 		if fieldSelecter, ok := cs.targetStruct.(FieldSelecter); ok {
 			dofield, serr := fieldSelecter.SqrapeFieldSelect(fieldName, cs.context...)
 			if serr != nil {
@@ -80,8 +90,9 @@ func (cs *cssStructer) parseTargetFields(resp *goquery.Selection) error {
 				continue
 			}
 		}
+		// Do this field (possibly recursive if a struct or slice of structs)
 		//fmt.Printf("parseTargetFields: On fieldName='%s',fieldTag='%s'\n", fieldName, fieldTag)
-		err = cs.parseField(fieldName, fieldTag, resp)
+		err = cs.processField(fieldName, fieldTag, resp)
 		if err != nil {
 			//fmt.Printf("parseTargetFields: Error on fieldName='%s',fieldTag='%s': %+v", fieldName, fieldTag, err)
 			return err
@@ -92,7 +103,7 @@ func (cs *cssStructer) parseTargetFields(resp *goquery.Selection) error {
 
 // css tags are expected to be of form "<css rules>;<attr=attrName/text/html>",
 // where the latter portion determines what value is extracted.
-func (cs *cssStructer) parseField(fieldName, tag string, resp *goquery.Selection) error {
+func (cs *cssStructer) processField(fieldName, tag string, resp *goquery.Selection) error {
 	//fmt.Printf("parseField: Parsing tag='%s'\n", tag)
 	var sel *goquery.Selection
 	selector, valueType, attrName, err := parseTag(tag)
@@ -130,7 +141,7 @@ func (cs *cssStructer) setFieldValueByType(fieldValue, fieldName, attrName strin
 			//cs.collectedFieldValues[fieldName] = structs.Map(targetFieldDirect)
 			stmap, err := reflections.Items(targetFieldDirect)
 			if err != nil {
-				return err
+				return errors.Wrap(err, 0)
 			}
 			cs.collectedFieldValues[fieldName] = stmap
 		}
@@ -147,11 +158,12 @@ func (cs *cssStructer) setFieldValueByType(fieldValue, fieldName, attrName strin
 
 			sliceValue, err := reflections.GetField(cs.targetStruct, fieldName)
 			if err != nil {
-				return err
+				return errors.Wrap(err, 0)
 			}
 			sliceOfType := reflect.ValueOf(sliceValue).Type().Elem()
 			sliceKind := sliceOfType.Kind()
 			//fmt.Printf("setFieldValueByType: fieldName='%s', slice subtype is '%s'\n", fieldName, sliceKind)
+			var ee []eachError
 			switch sliceKind {
 			case reflect.Struct:
 				{
@@ -169,12 +181,18 @@ func (cs *cssStructer) setFieldValueByType(fieldValue, fieldName, attrName strin
 						err = extractByTags(el, val.Interface())
 						if err != nil {
 							//fmt.Printf("setFieldValueByType.sel.Each: fieldName='%s', Error: %+v\n", fieldName, err)
+							if _, prewrapped := err.(*errors.Error); !prewrapped {
+								err = errors.Wrap(err, 0)
+							}
+							ee = append(ee, eachError{idx, err})
 							return
 						}
 						//fmt.Printf("setFieldValueByType.sel.Each: fieldName='%s', mapping new value (struct?=%v): %+v\n", fieldName, structs.IsStruct(val), val)
 						mval, err := reflections.Items(val.Interface())
 						if err != nil {
 							//fmt.Printf("setFieldValueByType.sel.Each: fieldName='%s', Error: %+v\n", fieldName, err)
+							err = errors.Wrap(err, 0)
+							ee = append(ee, eachError{idx, err})
 							return
 						}
 						//fmt.Printf("setFieldValueByType.sel.Each: fieldName='%s', appending new value: %+v\n", fieldName, mval)
@@ -192,6 +210,10 @@ func (cs *cssStructer) setFieldValueByType(fieldValue, fieldName, attrName strin
 					sel.Each(func(idx int, el *goquery.Selection) {
 						val, err := getFieldValue(fieldValue, attrName, el)
 						if err != nil {
+							if _, prewrapped := err.(*errors.Error); !prewrapped {
+								err = errors.Wrap(err, 0)
+							}
+							ee = append(ee, eachError{idx, err})
 							return
 						}
 						selarray = append(selarray, val)
@@ -199,8 +221,13 @@ func (cs *cssStructer) setFieldValueByType(fieldValue, fieldName, attrName strin
 				}
 			default:
 				//fmt.Printf("setFieldValueByType: fieldName='%s', unsupported kind: %s\n", fieldName, sliceKind.String())
-				return errors.New("Field is of an unsupported slice value kind: " + sliceKind.String())
+				return errors.Errorf("Field is of an unsupported slice value kind: %s", sliceKind.String())
 			}
+
+			if ee != nil && len(ee) > 0 {
+				return errors.WrapPrefix(ee[0], fmt.Sprintf("%d errors occurred while filling slice field '%s', first error is: ", len(ee), fieldName), 0)
+			}
+
 			//fmt.Printf("setFieldValueByType: assigning to collectedFieldValues[%s]: %+v\n", fieldName, selarray)
 			cs.collectedFieldValues[fieldName] = selarray
 		}
@@ -230,27 +257,36 @@ func getFieldAndPointer(thing interface{}, fieldName string) (direct reflect.Val
 func getFieldValue(fieldValue, attrName string, sel *goquery.Selection) (string, error) {
 	switch fieldValue {
 	case "text":
-		val := sel.Text()
-		return val, nil
-	case "html":
-		return sel.Html()
-	case "attr":
-		val, ok := sel.Attr(attrName)
-		if !ok {
-			return "", nil
-			//			outHTML, _ := sel.Html()
-			//			return "", errors.New("Attribute '" + attrName + "' not found in selection: " + outHTML)
+		{
+			val := sel.Text()
+			return val, nil
 		}
-		return val, nil
+	case "html":
+		{
+			html, err := sel.Html()
+			err = errors.Wrap(err, 0)
+			return html, err
+		}
+	case "attr":
+		{
+			val, ok := sel.Attr(attrName)
+			if !ok {
+				// Silently ignore bad CSS fields. This is warty, yes, but should emerge
+				// quickly in development and is marginally better than the alternative.
+				// TODO: Add a setting to cssStructer to choose stricter behavior?
+				return "", nil
+			}
+			return val, nil
+		}
 	default:
-		panic("Bad fieldValue: " + fieldValue)
+		return "", errors.Errorf("Bad fieldValue: %s", fieldValue)
 	}
 }
 
 func parseTag(tag string) (selector, valueType, attrName string, err error) {
 	bits := strings.Split(strings.TrimSpace(tag), ";")
 	if len(bits) != 2 {
-		return "", "", "", errors.New("Failed to split tag: " + tag)
+		return "", "", "", errors.Errorf("Failed to split tag: %s", tag)
 	}
 	selector = bits[0]
 	if strings.HasPrefix(bits[1], "obj") {
@@ -259,27 +295,27 @@ func parseTag(tag string) (selector, valueType, attrName string, err error) {
 	if strings.HasPrefix(bits[1], "attr") {
 		bits2 := strings.Split(strings.TrimSpace(bits[1]), "=")
 		if len(bits2) < 2 {
-			return "", "", "", errors.New("Failed to split attribute in tag: " + tag)
+			return "", "", "", errors.Errorf("Failed to split attribute in tag: %s", tag)
 		}
 		valueType = "attr"
 		attrName = bits2[1]
 		return selector, valueType, attrName, nil
 	}
 	if bits[1] != "text" && bits[1] != "html" {
-		return "", "", "", errors.New("Invalid valueType, must be one of attr/text/html/obj: " + tag)
+		return "", "", "", errors.Errorf("Invalid valueType, must be one of attr/text/html/obj: %s", tag)
 	}
 	valueType = bits[1]
 	return selector, valueType, "", nil
 }
 
-func prepStructer(src *goquery.Selection, dest interface{}, context ...interface{}) (*cssStructer, error) {
+func runStructer(src *goquery.Selection, dest interface{}, context ...interface{}) (*cssStructer, error) {
 	cs := &cssStructer{
 		targetStruct:         dest,
 		collectedFieldValues: make(map[string]interface{}),
 		context:              context,
 	}
 	//fmt.Printf("extractByTags: passing to parseTargetFields(), state= %+v\n", cs)
-	err := cs.parseTargetFields(src)
+	err := cs.processTargetFields(src)
 	if err != nil {
 		return nil, err
 	}
@@ -289,7 +325,7 @@ func prepStructer(src *goquery.Selection, dest interface{}, context ...interface
 // extractByTags tries to pull information from src according to css rules in
 // dest's struct field tags.
 func extractByTags(src *goquery.Selection, dest interface{}, context ...interface{}) error {
-	cs, err := prepStructer(src, dest, context...)
+	cs, err := runStructer(src, dest, context...)
 	if err != nil {
 		return err
 	}
@@ -300,7 +336,7 @@ func extractByTags(src *goquery.Selection, dest interface{}, context ...interfac
 // mapFromTags uses template's tags to find and pull data from src, and returns
 // a map of the resulting data.
 func mapFromTags(src *goquery.Selection, template interface{}, context ...interface{}) (map[string]interface{}, error) {
-	cs, err := prepStructer(src, template, context...)
+	cs, err := runStructer(src, template, context...)
 	if err != nil {
 		return nil, err
 	}
@@ -316,8 +352,13 @@ func ExtractHTMLReader(reader io.Reader, dest interface{}, context ...interface{
 	//* To toggle defer..
 	defer func() {
 		pan := recover()
-		if err != nil {
-			err = fmt.Errorf("Panic caught in ExtractHTMLReader: %+v", pan)
+		if pan == nil {
+			return
+		}
+		if vanillaerr, ok := pan.(error); ok {
+			err = vanillaerr
+		} else {
+			err = errors.Errorf("Panic caught in ExtractHTMLReader: %+v", pan)
 		}
 	}() //*/
 	doc, err = goquery.NewDocumentFromReader(reader)
