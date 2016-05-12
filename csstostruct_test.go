@@ -137,9 +137,10 @@ func TestGetValue(t *testing.T) {
 
 func TestSimpleExtraction(t *testing.T) {
 	s := new(Simple)
-	simpleResp, err := goquery.NewDocumentFromReader(strings.NewReader(simpleHTML))
-	assert.Nil(t, err)
-	err = extractByTags(simpleResp.Selection, s)
+	err := ExtractHTMLString(simpleHTML, s)
+	/*	simpleResp, err := goquery.NewDocumentFromReader(strings.NewReader(simpleHTML))
+		assert.Nil(t, err)
+		err = extractByTags(simpleResp.Selection, s) */
 	assert.Nil(t, err)
 	assert.Equal(t, "This is a title for my super simple blogpost", s.Heading)
 	assert.Equal(t, []string{
@@ -152,9 +153,10 @@ func TestSimpleExtraction(t *testing.T) {
 
 func TestComplexExtraction(t *testing.T) {
 	c := new(Complex)
-	simpleResp, err := goquery.NewDocumentFromReader(strings.NewReader(simpleHTML))
-	assert.Nil(t, err)
-	err = extractByTags(simpleResp.Selection, c, "foo", 2)
+	err := ExtractHTMLString(simpleHTML, c, "foo", 2)
+	/*	simpleResp, err := goquery.NewDocumentFromReader(strings.NewReader(simpleHTML))
+		assert.Nil(t, err)
+		err = extractByTags(simpleResp.Selection, c, "foo", 2) */
 	assert.Nil(t, err)
 	assert.Equal(t, "This is a title for my super simple blogpost", c.Heading)
 	assert.Equal(t, []string{

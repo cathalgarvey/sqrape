@@ -153,12 +153,15 @@ func (cs *cssStructer) setFieldValueByType(fieldValue, fieldName, attrName strin
 				{
 					// Handle struct slices
 					// Make a new object: reflect.New(sliceOfType)
+					//fmt.Printf("setFieldValueByType: fieldName='%s', getting logHTML\n", fieldName)
 					//logHTML, _ := sel.Html()
+					//logHTML := ""
 					//fmt.Printf("setFieldValueByType: fieldName='%s', Iteratively converting selection (length %d) to structs: %s\n", fieldName, sel.Length(), logHTML)
 					sel.Each(func(idx int, el *goquery.Selection) {
 						//logHTML, _ := el.Html()
 						//fmt.Printf("setFieldValueByType.sel.Each: fieldName='%s', on el = '%s'\n", fieldName, logHTML)
 						val := reflect.New(sliceOfType)
+						// replace with mapFromTags?
 						err = extractByTags(el, val.Interface())
 						if err != nil {
 							//fmt.Printf("setFieldValueByType.sel.Each: fieldName='%s', Error: %+v\n", fieldName, err)
@@ -179,6 +182,7 @@ func (cs *cssStructer) setFieldValueByType(fieldValue, fieldName, attrName strin
 				reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr,
 				reflect.Float32, reflect.Float64:
 				{
+					//fmt.Printf("setFieldValueByType: fieldName='%s', Iteratively converting selection (length %d) to strings.\n", fieldName, sel.Length())
 					// Handle basic type slices
 					// Basic, stringified types mapstructure likes.
 					sel.Each(func(idx int, el *goquery.Selection) {
@@ -190,6 +194,7 @@ func (cs *cssStructer) setFieldValueByType(fieldValue, fieldName, attrName strin
 					})
 				}
 			default:
+				//fmt.Printf("setFieldValueByType: fieldName='%s', unsupported kind: %s\n", fieldName, sliceKind.String())
 				return errors.New("Field is of an unsupported slice value kind: " + sliceKind.String())
 			}
 			//fmt.Printf("setFieldValueByType: assigning to collectedFieldValues[%s]: %+v\n", fieldName, selarray)
@@ -228,8 +233,9 @@ func getFieldValue(fieldValue, attrName string, sel *goquery.Selection) (string,
 	case "attr":
 		val, ok := sel.Attr(attrName)
 		if !ok {
-			outHTML, _ := sel.Html()
-			return "", errors.New("Attribute '" + attrName + "' not found in selection: " + outHTML)
+			return "", nil
+			//			outHTML, _ := sel.Html()
+			//			return "", errors.New("Attribute '" + attrName + "' not found in selection: " + outHTML)
 		}
 		return val, nil
 	default:
@@ -303,12 +309,13 @@ func ExtractHTMLReader(reader io.Reader, dest interface{}, context ...interface{
 	var doc *goquery.Document
 	// Catch panics; reflect being a mire of panics, after all.
 	// Need to rewrite to try and preserve panic context, somehow?
+	//* To toggle defer..
 	defer func() {
 		pan := recover()
 		if err != nil {
 			err = fmt.Errorf("Panic caught in ExtractHTMLReader: %+v", pan)
 		}
-	}()
+	}() //*/
 	doc, err = goquery.NewDocumentFromReader(reader)
 	if err != nil {
 		return

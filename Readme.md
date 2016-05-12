@@ -111,6 +111,12 @@ Issue for cases that fail and I'll try to get it working.
 Take a look at the test cases for an example of what works well. Feel free to
 volunteer test cases.
 
+### What's Not Supported?
+Pointer fields! If your field has a nested struct as a pointer, right now it
+will crash, and for reasons unknown to me you'll get no informative error while
+panic-catching is enabled in the entrypoint functions. I'm working on a fix that
+will initially just abort informatively on pointer fields, and later will work.
+
 ### Credits Reel
 Obviously, [`GoQuery`][ghgoquery] deserves a huge slice of the credit for this.
 
