@@ -305,7 +305,9 @@ func ExtractHTMLReader(reader io.Reader, dest interface{}, context ...interface{
 	// Need to rewrite to try and preserve panic context, somehow?
 	defer func() {
 		pan := recover()
-		err = fmt.Errorf("Panic caught in ExtractHTMLReader: %+v", pan)
+		if err != nil {
+			err = fmt.Errorf("Panic caught in ExtractHTMLReader: %+v", pan)
+		}
 	}()
 	doc, err = goquery.NewDocumentFromReader(reader)
 	if err != nil {
