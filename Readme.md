@@ -122,6 +122,12 @@ messy and due re-writing in pure `reflect` code. Meanwhile, thanks to
 [`structs`][ghstructs] and [`reflections`][ghreflections] for tiding me over
 this much of the project, by offering handy higher-level abstractions for `reflect`.
 
+Reflection may give you the shivers; you're right, this code is potentially
+explosive right now! Caveat emptor. However, the entry point functions do have
+a blanket-recover deferred, so this code shouldn't panic, merely return an error
+on panicky behaviour. **Please report any panic errors you encounter, to help me
+make this more stable**.
+
 [ghgoquery]: https://github.com/PuerkitoBio/goquery
 [ghmapstructure]: https://github.com/mitchellh/mapstructure
 [ghstructs]: https://github.com/fatih/structs
