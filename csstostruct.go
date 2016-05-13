@@ -216,6 +216,9 @@ func (cs *cssStructer) setFieldValueByType(fieldValue, fieldName, attrName strin
 							ee = append(ee, eachError{idx, err})
 							return
 						}
+						if val == "" {
+							return
+						}
 						selarray = append(selarray, val)
 					})
 				}
@@ -223,11 +226,9 @@ func (cs *cssStructer) setFieldValueByType(fieldValue, fieldName, attrName strin
 				//fmt.Printf("setFieldValueByType: fieldName='%s', unsupported kind: %s\n", fieldName, sliceKind.String())
 				return errors.Errorf("Field is of an unsupported slice value kind: %s", sliceKind.String())
 			}
-
 			if ee != nil && len(ee) > 0 {
-				return errors.WrapPrefix(ee[0], fmt.Sprintf("%d errors occurred while filling slice field '%s', first error is: ", len(ee), fieldName), 0)
+				return errors.WrapPrefix(ee[0].err, fmt.Sprintf("%d errors occurred while filling slice field '%s', first error (item %d) is: ", len(ee), fieldName, ee[0].idx), 0)
 			}
-
 			//fmt.Printf("setFieldValueByType: assigning to collectedFieldValues[%s]: %+v\n", fieldName, selarray)
 			cs.collectedFieldValues[fieldName] = selarray
 		}
@@ -236,6 +237,9 @@ func (cs *cssStructer) setFieldValueByType(fieldValue, fieldName, attrName strin
 			val, err := getFieldValue(fieldValue, attrName, sel)
 			if err != nil {
 				return err
+			}
+			if val == "" {
+				return nil
 			}
 			cs.collectedFieldValues[fieldName] = val
 		}

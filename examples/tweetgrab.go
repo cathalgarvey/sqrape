@@ -7,6 +7,7 @@ import (
 
 	"github.com/alecthomas/kingpin"
 	"github.com/cathalgarvey/sqrape"
+	"github.com/go-errors/errors"
 )
 
 var (
@@ -29,11 +30,17 @@ func main() {
 	kingpin.Parse()
 	resp, err := http.Get("https://twitter.com/" + *profile)
 	if err != nil {
+		if serr, ok := err.(*errors.Error); ok {
+			log.Fatal(serr.ErrorStack())
+		}
 		log.Fatal(err)
 	}
 	tp := new(TwitterProfile)
 	err = sqrape.ExtractHTMLReader(resp.Body, tp)
 	if err != nil {
+		if serr, ok := err.(*errors.Error); ok {
+			log.Fatal(serr.ErrorStack())
+		}
 		log.Fatal(err)
 	}
 	for _, tweet := range tp.Tweets {
