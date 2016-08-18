@@ -1,6 +1,8 @@
 ## Sqrape - Simple Query Scraping with CSS and Go Reflection
 by Cathal Garvey, ©2016, Released under the GNU AGPLv3
 
+[![Go Report Card](https://goreportcard.com/badge/github.com/cathalgarvey/sqrape)](https://goreportcard.com/report/github.com/cathalgarvey/sqrape)
+
 ### What
 When scraping web content, one usually hopes that the content is laid out
 logically, and that proper or at least consistent web annotation exists.
